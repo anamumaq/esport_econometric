@@ -1,0 +1,24 @@
+---
+title: "modelo econometrico"
+author: "Ana Munoz"
+date: "2024-02-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Lectura de datos
+
+```{r}
+df <- read.csv('df_17_18_19.csv')
+```
+
+```{r}
+
+```
+
+
+
+# Limpieza de datos
