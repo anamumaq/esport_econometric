@@ -6,13 +6,99 @@ library(psych)
 library(ggplot2)
 library(purrr)
 library(car)
+library(lmtest)
 
 # read csv
 # df_panel <- read.csv('df_tfm_clean_test.csv')
-df_panel <- df_corr
-
+df_panel <- df_corr%>%select(-CPI, #corrupcion se relaciona mucho
+                             # -poder_adq # same pbicap
+                             # -internet,
+                             -pbicap)
+head(df_panel,2)
 ##############
 # EDA
+matriz_corr <- cor(df_panel[3:13])
+corrplot(matriz_corr, method = 'number', number.cex = 0.7) # encuentro correlaciones
+
+#######################
+pairs(df_panel[3:13])
+
+#######################
+# modelo pooling
+# https://towardsdatascience.com/a-guide-to-panel-data-regression-theoretics-and-implementation-with-python-4c84c5055cf8
+model_1 <- plm(total_earnings ~ gdp_gr+gastoedu+poder_adq+
+               desempleo+internet+movil+age_game+poblacion+pop_growth+rural_per,
+             data = df_panel, model = "pooling")
+
+fittedvals_pooled_OLS <- fitted.values(model_1)
+residuals_pooled_OLS <- residuals(model_1)
+
+# homocedasticidad
+
+ggplot(data.frame(fittedvals = fittedvals_pooled_OLS, 
+                  residuals = residuals_pooled_OLS),
+       aes(x = fittedvals, y = residuals)) +
+  geom_point(color = 'blue') +
+  geom_hline(yintercept = 0, color = 'red', linetype = 'dashed') +
+  labs(x = 'Predicted Values', 
+       y = 'Residuals', 
+       title = 'Test de homosedasticidad')#parece q no hay homo
+
+test_breusch_pagan <- bptest(model_1)
+print(test_breusch_pagan) # menor a 0.05 existe heterosedasticidad
+
+  # no autoco
+test_durbin_watson <- dwtest(model_1)
+print(test_durbin_watson) # no se obtiene nada
+# se concluyen que este modelo no es bueno porque inclumple varios supuestos
+
+#######################
+# modelo RE aleatorios 
+
+re_model <- plm(total_earnings ~ gdp_gr+gastoedu,
+                # +poder_adq+
+                # desempleo+internet+movil+age_game+
+                # poblacion+pop_growth+rural_per, #para no tener intercepto
+                data = df_panel, model = "random", 
+                # effect = "individual",
+                index=c("country", "year"), 
+                # random.method = 'nerlove'
+                )
+#Swamy no sirve para este modelo porque tengo 11 var y 3 pauses
+resultado_re <- summary(re_model)
+
+# modelo FE fijos
+
+fe_model <- plm(total_earnings ~ gdp_gr+gastoedu,
+                # +poder_adq+
+                #   desempleo+internet+movil+age_game+
+                #   poblacion+pop_growth+rural_per,
+                data = df_panel, model = "within")
+resultado_fe <- summary(fe_model)
+
+# Evaluo con housman cual me conviene
+
+phtest(resultado_fe_index, resultado_re)
+  print("Chi-Squared:", hausman_test[1])
+print("Degrees of Freedom:", hausman_test[2])
+print("p-Value:", hausman_test[3])
+
+
+
+# Efectos fijos pero con index # con constantes a lo largo del tiempo las otras variables
+fe_model_index = plm(total_earnings ~ gdp_gr+gastoedu,
+                     # +poder_adq+
+                     #     desempleo+internet+movil+age_game+
+                     #     poblacion+pop_growth+rural_per,
+                       index=c("country", "year"), 
+                       model="within", data=df_panel)
+resultado_fe_index <- summary(fe_model_index)
+
+
+
+
+
+######################
 
 #Segun la literatura el GPC y la poblacion 
 #son variables que impactan directamente al desempeno del deporte
@@ -43,14 +129,16 @@ ggplot(df_panel, aes(x = factor(country), y = total_earnings)) +
   theme(axis.text.x = element_text(angle = 90))
 
 
+
+
 # win.graph()
 # scatterplot(total_earnings~year, boxplots=FALSE, 
 #             smooth=TRUE, reg.line=FALSE, data=df_corr)
 
-plotmeans(total_earnings ~ year, main="Heterogeineity across years", data=df_corr)
+# plotmeans(total_earnings ~ year, main="Heterogeineity across years", data=df_corr)
 
 
-ggplot(df_corr, aes(x = factor(year), y = total_earnings)) +
+ggplot(df_panel, aes(x = factor(year), y = total_earnings)) +
   stat_summary(fun = mean, geom = "point", color = "red", size = 3) +
   stat_summary(fun.data = function(y) mean_se(y, mult = 1), geom = "errorbar", width = 0.2, color = "red") +
   labs(title = "Heterogeineity across years", x = "Year", y = "Y")
@@ -59,12 +147,10 @@ ggplot(df_corr, aes(x = factor(year), y = total_earnings)) +
 
 
 
-pairs(df_standar%>%select(pbicap, 
+pairs(df_panel%>%select(pbicap, 
                           GNI_cap, #paridad poder adq
                           CPI, # corrupcion
-                          poder_adq, #poder adq
-                          gdp_gr,# crecimiento pbi percapita
-                          GDP_growth, # crecimiento pbi 
+                          poder_adq, #poder ad
 ))
 
 # win.graph()

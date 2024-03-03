@@ -95,4 +95,4 @@ corrplot(matriz_corr, method = 'number', number.cex = 0.7) # encuentro correlaci
 ####
 # save data clean
 
-write.csv(df_corr, 'df_tfm_clean_test.csv', row.names = FALSE)
+# write.csv(df_corr, 'df_tfm_clean_test.csv', row.names = FALSE)
