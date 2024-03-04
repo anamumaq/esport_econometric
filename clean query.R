@@ -6,7 +6,7 @@ library(corrplot)
 
 # Lectura de datos
 
-df <- read.csv('df_17_18_19.csv')
+df <- read.csv('df_17_21.csv')
 
 head(df,3)
 
@@ -15,13 +15,13 @@ head(df,3)
 df <- df %>% 
   select(year, country, total_earnings, # y
          -total_players,-iso, #no aplica el modelo 
-         pbicap, gdp_gr, GDP_growth, GNI_cap, # variables macroeconomicas
-         gastoedu, -edu_pbi_per, # edu
+         pbicap, gdp_gr, GNI_cap, # variables macroeconomicas
+         gastoedu, # edu
          CPI, # corrupcion
          poder_adq, desempleo,# work 
          internet, elect_acc, movil, # tech access
-         age_work, age_game, # edades
-         poblacion, pop_growth, rural_per, urb # people
+         age_game, # edades
+         poblacion, pop_growth, rural_per # people
         ) %>%
   arrange(country, decreasing = FALSE)
 
@@ -46,18 +46,18 @@ df[df$country=='Trinidad and Tobago', 'internet'][2] <-
               df[df$country=='Trinidad and Tobago', 'internet'][3])/2
 #######
 # Filtro paises por conflicto o restricciones gubernaentales
-df[is.na(df$poder_adq),'country'] # nas
-df[is.na(df$GNI_cap),'country'] # nas
-
-df <- df[!df$country %in% c('Cuba','Syrian Arab Republic'),]
+# df[is.na(df$poder_adq),'country'] # nas
+# df[is.na(df$GNI_cap),'country'] # nas
+# 
+# df <- df[!df$country %in% c('Cuba','Syrian Arab Republic'),]
 ###
 
 df[is.na(df$gastoedu),c('country', 'year')] # nas
 
 # 
-df <- df%>%select(-age_work, # personas relacionado a pobacion
-                  -urb,  # igual a rural
-                  )
+# df <- df%>%select(-age_work, # personas relacionado a pobacion
+#                   -urb,  # igual a rural
+#                   )
 
 ##################################
 # por mientras
