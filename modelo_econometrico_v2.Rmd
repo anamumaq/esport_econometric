@@ -14,6 +14,7 @@ library(ggplot2)
 library(fitdistrplus)
 library(plm)
 library(lmtest)
+library(car)
 ```
 
 # Pre procesamiento de datos
@@ -34,7 +35,6 @@ df <- read.csv('df_17_21_noclean.csv') %>%
          poblacion# people
         ) %>%
   arrange(country, decreasing = FALSE)
-
 
 
 head(df, 3)
@@ -100,27 +100,95 @@ df_standar <- df %>%
    mutate(across(c("total_earnings", "pbicap", "poblacion"), ~log(.) %>% as.vector))
 ```
 
-## 4. Correlacion y eliminacion de variables
-* verificacion de correlaciones
+# EDA varibales
 ```{r}
-matriz_corr <- cor(df_standar[3:13])
-corrplot(matriz_corr, method = 'number', number.cex = 0.8) 
+head(df_standar)
 ```
 
-* Veamos mas a detalle las correlaciones encontradas,  pbippa,  cpi e acceso internet
- Se debe crear otra variable para eliminar la correlacion?
- estas correlaciones no implican causalidad, pero como debo tratarlas?
 ```{r}
-pairs.panels(df_standar%>%dplyr::select(total_earnings,players_ppl, pbicap, internet,CPI),
-             smooth = FALSE,     # Si TRUE, dibuja ajuste suavizados de tipo loess
-             scale = FALSE,      # Si TRUE, escala la fuente al grado de correlación
-             density = TRUE,     # Si TRUE, añade histogramas y curvas de densidad
-             ellipses = FALSE,   # Si TRUE, dibuja elipses
-             method = "pearson", # Método de correlación (también "spearman" o "kendall")
-             lm = TRUE,          # Si TRUE, dibuja un ajuste lineal en lugar de un ajuste LOESS
-             cor = TRUE,         # Si TRUE, agrega correlaciones
-             jiggle = FALSE,     # Si TRUE, se añade ruido a los dato
-) 
+ggplot(df_standar, aes(x = year, y = total_earnings)) +
+  geom_boxplot()
+```
+
+```{r}
+median_earnings <- aggregate(total_earnings ~ country, df_standar, median)
+df_eda <- merge(df_standar, median_earnings, by = "country", suffixes = c("", "_median"))
+```
+
+
+```{r}
+ggplot(df_eda, aes(x = players_ppl, y = total_earnings, color = total_earnings_median)) +
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green") +  # Puedes cambiar los colores a tu gusto
+  theme(legend.position = "none")  # Esto oculta la leyenda
+```
+
+```{r}
+ggplot(df_eda, aes(x = pbicap, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "pbicap", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
+```
+
+```{r}
+ggplot(df_eda, aes(x = gdp_gr, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "gdp_gr", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
+```
+```{r}
+ggplot(df_eda, aes(x = CPI, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "CPI", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
+```
+```{r}
+
+ggplot(df_eda, aes(x = internet, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "internet", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
+
+```
+```{r}
+ggplot(df_eda, aes(x = elect_acc, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "elect_acc", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
+```
+```{r}
+ggplot(df_eda, aes(x = life_exp, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "life_exp", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
+```
+```{r}
+ggplot(df_eda, aes(x = poblacion, y = total_earnings, color = total_earnings_median)) + 
+  geom_point() +
+  facet_wrap(~ year) +
+  scale_color_gradient(low = "red", high = "green")+
+  labs(x = "poblacion", y = "Ganancias") +
+  theme(legend.position = "none")+
+  ggtitle("Ganancias en videojuegos a lo largo del tiempo por país")
 
 ```
 
@@ -128,6 +196,7 @@ pairs.panels(df_standar%>%dplyr::select(total_earnings,players_ppl, pbicap, inte
 
 ## 0. Preparando los datos
 * tenemos datos panel con la siguente forma 90 paises 5 anios y estas cols
+* Nuestro panel es balanceado y corto
 ```{r}
 # df_panel <- df_standar %>% select(-c(total_players))
 # por si sera necesario quitar algunas var
@@ -140,11 +209,18 @@ colnames(df_standar)
 ```{r, warning=FALSE}
 attach(df_standar)
 Y <- cbind(total_earnings)
-X <- cbind(pbicap, gdp_gr, CPI, internet,exp_tech,
-           elect_acc, life_exp, poblacion, players_ppl)
+X <- cbind(pbicap, gdp_gr, internet, 
+           exp_tech, 
+           #CPI, 
+          elect_acc, 
+           life_exp, poblacion, players_ppl)
 
-df_panel <- pdata.frame(df_standar, 
-                        index=c('country','year'))
+df_panel <- pdata.frame(df_standar,
+                        index=c('country','year')
+                        )
+# [, c('total_earnings', 'pbicap', 'gdp_gr', 'internet',
+#                'exp_tech', 'CPI', 'elect_acc', 'life_exp', 
+#                'poblacion', 'players_ppl')]
 
 head(df_panel,3)
 ```
@@ -164,8 +240,38 @@ summary(random)
 
 # Test
 
+## 1. Breusch-Pagan
+* Mediante plmtest se realiza el contraste con hipótesis nula el modelo agrupado es mejor que el de efectos aleatorios. En este caso se rechaza dicha hipótesis (p-valor menor que 0.05 ya que es menor que 2·10^(-16)), luego los efectos aleatorios son preferibles.
+```{r}
+plmtest(random, type=c("bp"))
+```
+
 ## Hausman test for fijos versus random effects model
 
+* Mediante phtest se realiza el contraste de Hausman con hipótesis nula el modelo de efectos aleatorios es mejor que el de efectos fijos. En este caso se rechaza dicha hipótesis (p-valor=0.000000005492<0.05), luego los efectos fijos son preferibles.
 ```{r}
 phtest(fijos, random)
 ```
+################################################################
+
+## F test
+* Mediante pFtest se realiza el contraste con hipótesis nula el modelo agrupado es mejor que el de efectos fijos. En este caso se rechaza dicha hipótesis (p-valor menor que 0.05 ----------), luego los efectos fijos son preferibles.
+```{r}
+pFtest(fijos, random) 
+```
+
+# Efectos fijos
+```{r}
+fixef(fijos) # efectos individuales de cada individuo
+```
+# Analizando multicolinealidad VIF
+
+```{r}
+df_panel
+```
+
+```{r}
+# vifinf(X)
+ls.str("vifinf")
+```
+
