@@ -32,7 +32,7 @@ df <- read.csv('df_17_21_noclean.csv') %>%
          internet, 
          elect_acc,
          exp_tech, # tech access
-         -age_work,
+         net_mig,
          life_exp, # edades
          poblacion# people
         ) %>%
@@ -80,22 +80,36 @@ df <- df[!df$country %in% exp_faltantes, ]
 # CPI macao no tiene por temas politicos
 df <- df[df$country != 'Macao', ]
 
+# Migation Hong Kong considerado dentro del gobierno de cina
+df <- df[df$country != 'Hong Kong', ]
+
+## primero para el year que falta en korea 2020 
+df[df$country=='Korea, Republic of', 'net_mig'][4] <- 
+   (df[df$country=='Korea, Republic of', 'net_mig'][3]+
+      df[df$country=='Korea, Republic of', 'net_mig'][5])/2
+
+## Mismos valores que el 2022
+df[df$country=='Mongolia', 'net_mig'][4] <- -850
+df[df$country=='Mongolia', 'net_mig'][5] <- -850
 
 ### Jugadores por poblacion por millon
 df$players_ppl <- (df$total_players/df$poblacion)*1000000
+
+
+### Jugadores por poblacion por millon
+df$net_mig <- (df$net_mig/df$poblacion)*1000000
+
 
 ###########
 
 # verificamos NAs, ahora no tengo NAS
 sapply(df, function(x) sum(is.na(x)))
 ```
+
+
 ## 3.  Normalizacion con logaritmo
 
 * valores con varianzas muy grandes
-
-```{r}
-summary(df)
-```
 * aplico normalizacion logaritmica en algunas variables
 
 ```{r}
@@ -104,45 +118,8 @@ df_standar <- df %>%
   mutate(year = year(df$year))
 ```
 
-# EDA varibales
-## GRafico a nivel global 
-```{r}
-ggplot(df_standar %>%
-        group_by(year) %>%
-        summarise(total_earnings = sum(total_earnings)),
-       aes(x = year, y = total_earnings)) +
-  geom_line()+
-  # scale_x_continuous(breaks = c(2017, 2018, 2019, 2020, 2021))+
-  ggtitle("Total Earnings Global by year")
-```
-## Grafico por variable y pais
-
-```{r}
-# median_earnings <- aggregate(total_earnings ~ country, df_standar, median)
-# df_eda <- merge(df_standar, median_earnings, by = "country", suffixes = c("", "_median"))
-# 
-# columnas <- colnames(df_eda)[5:13]
-# 
-# generar_graficos <- function(df, var) {
-#   p <- ggplot(df, aes_string(x = var, y = "total_earnings", color = "total_earnings_median")) +
-#     geom_point() +
-#     facet_wrap(~ year) +
-#     scale_color_gradient(low = "red", high = "green") +
-#     ggtitle(paste("Relacion de paises y",var,"en el tiempo por Ganancia media"))+
-#     theme(legend.position = "none")
-#   
-#   print(p)
-# }
-# 
-# lapply(columnas, generar_graficos, df = df_eda)
-
-```
-
-
-# Implementando modelos
-
 ## 0. Preparando los datos
-* tenemos datos panel con la siguente forma 90 paises 5 anios y estas cols
+* Tenemos datos panel con la siguente forma 90 paises 5 anios y estas columnas
 * Nuestro panel es balanceado y corto
 ```{r}
 dim(table(df_standar$country,df_standar$year))
@@ -157,12 +134,10 @@ Y <- cbind(total_earnings)
 X <- cbind(pbicap, 
            gdp_gr,
            internet, 
-           #exp_tech, 
-           #CPI, 
-           #elect_acc, 
            life_exp, 
            poblacion, 
-           players_ppl
+           players_ppl,
+           net_mig
            )
 
 df_panel <- pdata.frame(df_standar,
@@ -213,58 +188,19 @@ pFtest(fijos, mco)
 ```
 
 # Regresiones
-
-## Regresieon simple sin efectos fijos
-```{r}
-regresion_mco = lm(Y~X)
-summary(regresion_mco)
-```
 ## Regresieon con efectos fijos
 
-### by Country
-
-```{r}
-df_panel$country <- relevel(df_panel$country, ref = "China")
-regresion_country = lm(Y ~ X + factor(country), data = df_panel)
-summary(regresion_country)
-```
 
 
 
-### Analizando significancias
-```{r}
-
-p_values <- summary(regresion_country)$coefficients[,4]
-coeficiente <- summary(regresion_country)$coefficients[,1]
-
-no_significativo <- names(p_values)[which(p_values > 0.05)]
-
-significativo_positivos <- names(p_values)[which(p_values < 0.05 & coeficiente>0)]
-
-significativo_negativos <- names(p_values)[which(p_values < 0.05 & coeficiente<0)]
-
-```
-
-
-```{r}
-no_significativo
-```
-
-
-
-### By year
-* El año en sí mismo no parece tener un efecto significativo en Y después de ajustar por X
-```{r}
-regresion_years = lm(Y~X+factor(year))
-summary(regresion_years)
-```
-### by Country
+### by Country Spain
 
 ```{r}
 df_panel$country <- relevel(df_panel$country, ref = "Spain")
 regresion_country_sp = lm(Y ~ X + factor(country), data = df_panel)
 
 # summary(regresion_country)
+
 
 p_values <- summary(regresion_country_sp)$coefficients[,4]
 coeficiente <- summary(regresion_country_sp)$coefficients[,1]
@@ -274,12 +210,32 @@ no_significativo <- names(p_values)[which(p_values > 0.05)]
 significativo_positivos <- names(p_values)[which(p_values < 0.05 & coeficiente>0)]
 
 significativo_negativos <- names(p_values)[which(p_values < 0.05 & coeficiente<0)]
+```
 
+### Analizando significancias
+```{r}
+no_significativo
+```
+
+```{r}
+significativo_positivos
+```
+
+```{r}
 significativo_negativos
 ```
 
+### By year
+* El año en sí mismo no parece tener un efecto significativo en Y después de ajustar por X
+```{r}
+regresion_years = lm(Y~X+factor(year))
+summary(regresion_years)
+```
+
+
 # OTRAS IDEAS
 
+### Top 3 country
 ```{r}
  df_panel %>%
   group_by(country) %>%
@@ -287,6 +243,8 @@ significativo_negativos
   arrange(desc(total_earnings))
 
 ```
+
+### Crecimiento de ganancia
 ```{r}
 df_panel %>%
   group_by(country) %>%
@@ -296,25 +254,25 @@ df_panel %>%
   arrange(desc(CAGR))
 ```
 
-
+### Top 3 paises ganancias en el tiempo
 ```{r}
-# Supongamos que tu dataframe se llama df_eda y tienes las variables year, lifeExp, country y continent
-# Ajusta tu gráfico
 ggplot(df_panel %>%
   group_by(year) %>%
-  filter(country %in% c('Luxembourg', 'Paraguay', 'Costa Rica')), aes(x = year, y = total_earnings, group = country, color=country)) +
+  filter(country %in% c('China', 'United States', 'Korea, Republic of')), 
+  aes(x = year, y = total_earnings, group = country, color=country)) +
   geom_line() +
-  labs(x = "Year", y = "Life total_earnings") +
-  theme_minimal() +
-  theme()
+  labs(x = "Year", y = "total_earnings") +
+  ggtitle("Paises con mayor ingresos") 
 ```
+
+# Tops 3 paises crecimiento en el tiempo
 ```{r}
 ggplot(df_panel %>%
   group_by(year) %>%
-  filter(country %in% c('China', 'United States', 'Korea, Republic of')), aes(x = year, y = total_earnings, group = country, color=country)) +
+  filter(country %in% c("Luxembourg", "Paraguay", "Costa Rica")),
+  aes(x = year, y = total_earnings, group = country, color=country)) +
   geom_line() +
   labs(x = "Year", y = "Life total_earnings") +
-  theme_minimal() +
-  theme()
+  ggtitle("Paises con mayor CAGR") 
 ```
 
