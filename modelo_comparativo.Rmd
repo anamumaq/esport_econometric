@@ -1,5 +1,5 @@
 ---
-title: "modelo econometrico"
+title: "modelo_comparativa"
 author: "Ana Munoz"
 output: pdf_document
 ---
@@ -34,11 +34,11 @@ df <- read.csv('df_17_21_noclean.csv') %>%
          desempleo,
          pea, # tech access
          -net_mig,
-         life_exp, # edades
-         poblacion,# people
-         inflacion
+         -life_exp, # edades
+         poblacion# people
         ) %>%
   arrange(country, decreasing = FALSE)
+
 
 head(df, 3)
 ```
@@ -53,96 +53,43 @@ sapply(df, function(x) sum(is.na(x)))
 # Pbi faltantes 
 ## "Cuba"  "Lebanon"  "Syrian Arab Republic"  "Venezuela"  
 pbicap_faltantes <- unique(df[is.na(df$pbicap), ]$country)
-df <- df[!df$country %in% pbicap_faltantes, ]
+df_1 <- df[!df$country %in% pbicap_faltantes, ]
 
 # Internet: 2 faltantes -> 2018 cambodia y trinidad y tobago
 
 ### Cambodia, hueco en 2018, reemplazdo por el promedio
 
-df[df$country=='Cambodia', 'internet'][2] <- 
-          (df[df$country=='Cambodia', 'internet'][1] + 
-             df[df$country=='Cambodia', 'internet'][3])/2
+df_1[df_1$country=='Cambodia', 'internet'][2] <- 
+          (df_1[df_1$country=='Cambodia', 'internet'][1] + 
+             df_1[df_1$country=='Cambodia', 'internet'][3])/2
 
 ### trinidad y tobago, reemplazdo por el promedio
-df[df$country=='Trinidad and Tobago', 'internet'][2] <- 
-          (df[df$country=='Trinidad and Tobago', 'internet'][1]+
-              df[df$country=='Trinidad and Tobago', 'internet'][3])/2
+df_1[df_1$country=='Trinidad and Tobago', 'internet'][2] <- 
+          (df_1[df_1$country=='Trinidad and Tobago', 'internet'][1]+
+              df_1[df_1$country=='Trinidad and Tobago', 'internet'][3])/2
 
-# Acceso a electricidad y life expectanci solo antes del 2022
-df <- df %>%
-  filter(year < as.Date("2022-01-01"))
-
-# EXportacion tecnologica voy a quitar a los paises que no tiene exportacion por temas politicos
-##"Iran, Islamic Republic of" "United Arab Emirates" "Viet Nam"   
-# exp_faltantes <- unique(df[is.na(df$exp_tech), ]$country)
-# df <- df[!df$country %in% exp_faltantes, ]
-df <- df[!df$country %in% c("Iran", "Islamic Republic of", "United Arab Emirates", "Viet Nam"), ]    
-
-# CPI macao no tiene por temas politicos
-df <- df[df$country != 'Macao', ]
-
-# Migation Hong Kong considerado dentro del gobierno de cina
-df <- df[df$country != 'Hong Kong', ]
-
-## primero para el year que falta en korea 2020 
-# df[df$country=='Korea, Republic of', 'net_mig'][4] <- 
-#    (df[df$country=='Korea, Republic of', 'net_mig'][3]+
-#       df[df$country=='Korea, Republic of', 'net_mig'][5])/2
-
-## Mismos valores que el 2022
-# df[df$country=='Mongolia', 'net_mig'][4] <- -850
-# df[df$country=='Mongolia', 'net_mig'][5] <- -850
-
-
-# # Jugadores por poblacion por millon
-# df$net_mig <- (df$net_mig/df$poblacion)*1000000
-
+### Jugadores por poblacion por millon
+df_1$players_ppl <- (df_1$total_players/df_1$poblacion)*1000000
 
 ###########
 
 # verificamos NAs, ahora no tengo NAS
-sapply(df, function(x) sum(is.nan(x)))
+sapply(df_1, function(x) sum(is.nan(x)))
 ```
-
 
 
 ## 3.  Normalizacion con logaritmo
-
-```{r}
-summary(df)
-```
 
 * valores con varianzas muy grandes
 * aplico normalizacion logaritmica en algunas variables
 
 ```{r}
 df_standar <- df %>% 
-  # mutate(across(c("total_earnings", "pbicap", "poblacion", "pea", "total_players"), ~log(.)))%>%
-  mutate(across(c("total_earnings", "pbicap", "poblacion", "pea", "total_players"), ~sqrt(.))) %>%
+  mutate(across(c("total_earnings", "pbicap", "poblacion", "pea"), ~log(.)))%>%
   mutate(year = year(df$year))
-
-
 ```
-
-```{r}
-
-### Jugadores por poblacion por millon
-df_standar$players_ppl <- (df_standar$total_players/df$poblacion)
-
-
-summary(df_standar)
-```
-
 
 ## 0. Preparando los datos
-
-```{r}
-df_standar %>% 
-  group_by(country) %>% 
-  summarise(count = n())%>%
-  filter(count<5)
-```
-
 * Tenemos datos panel con la siguente forma 90 paises 5 anios y estas columnas
 * Nuestro panel es balanceado y corto
 ```{r}
@@ -156,17 +103,16 @@ colnames(df_standar)
 attach(df_standar)
 Y <- cbind(total_earnings)
 X <- cbind(pbicap, 
-           #gdp_gr,
+           gdp_gr,
            internet, 
-           #life_exp,
+           # life_exp, 
            # cpi,
            # elect_acc,
            pea,
            desempleo,
-           poblacion,
-           # players_ppl,
-           inflacion,
-           total_players
+           poblacion, 
+           players_ppl
+           # total_players
            # net_mig
            )
 
@@ -220,6 +166,9 @@ pFtest(fijos, mco)
 # Regresiones
 ## Regresieon con efectos fijos
 
+
+
+
 ### by Country Spain
 
 ```{r}
@@ -238,26 +187,6 @@ significativo_positivos <- names(p_values)[which(p_values < 0.05 & coeficiente>0
 
 significativo_negativos <- names(p_values)[which(p_values < 0.05 & coeficiente<0)]
 ```
-
-```{r}
-# summary(regresion_country_sp)
-shapiro.test(resid(regresion_country_sp))
-
-```
-```{r}
-library(lmtest)
-bptest(regresion_country_sp)
-
-```
-```{r}
-dwtest(regresion_country_sp)
-
-```
-```{r}
-library(car)
-vif(regresion_country_sp)
-```
-
 
 ### Analizando significancias
 ```{r}
@@ -302,15 +231,6 @@ df_panel %>%
 ```
 
 ### Top 3 paises ganancias en el tiempo
-```{r}
-
-ggplot(data = df_standar, aes(x = poblacion, y = total_earnings)) +
-  geom_point() + # Añadimos los puntos del scatter plot
-   geom_smooth() #method = "lm", se = TRUE, color = "blue") +
-  labs(x = "Población", y = "Total de Ganancias", title = "Relación entre Población y Total de Ganancias") +
-  theme_minimal() # Tema minimalista para el gráfico
-```
-
 ```{r}
 ggplot(df_panel %>%
   group_by(year) %>%
