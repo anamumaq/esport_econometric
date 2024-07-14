@@ -1,0 +1,320 @@
+---
+title: "modelo_tfm"
+author: "Ana Munoz"
+date: "2024-06-22"
+output: pdf_document
+---
+```{r setup, include=FALSE, warning=FALSE}
+# LIBRERIA USADAS
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+# library(corrplot)
+library(psych)
+library(ggplot2)
+# library(fitdistrplus)
+library(plm)
+library(lmtest)
+library(car)
+library(lubridate)
+library(vtable)
+library(ggthemes)
+```
+
+# Pre procesamiento de datos
+## 1. Lectura de datos y formato panel
+
+```{r}
+df <- read.csv('df_17_21_noclean.csv') %>%
+  dplyr::select(year, country, total_earnings, 
+         total_players, pbicap,  desempleo,
+         inflacion, internet, poblacion, pea,
+         net_mig) %>%
+  arrange(country, decreasing = FALSE)
+
+# rango de fechas
+df <- df %>%
+  filter(year < as.Date("2022-01-01"))
+
+# Filtro NA
+pbicap_faltantes <- unique(df[is.na(df$pbicap), ]$country) #"Cuba" "Venezuela"
+df <- df[!df$country %in% pbicap_faltantes, ]
+
+df <- df[!df$country %in% c("Cambodia","Syrian Arab Republic","Trinidad and Tobago",
+                            "Mongolia","Hong Kong"), ]
+df[df$country=='Korea, Republic of', 'net_mig'][4] <- 32000 #duda porque en otra web es 0
+
+# renombrar variables para el modelo
+renombrar <- c("year", "pais", "TG", "TJ", "PIBc", 
+               "DEmp", "INF", "INT", "POB", "PEA", "MIG")
+
+colnames(df) <- renombrar
+
+```
+
+## Revision de nulos
+```{r}
+sapply(df, function(x) sum(is.na(x)))
+```
+
+## Revision de total de datos
+```{r}
+df %>% 
+  group_by(year) %>% 
+  summarise(count = n())
+```
+
+## Descriptivo
+```{r}
+# sumtable(df[,-c(1,2)], digits = 3,
+#          title="Estadisticos descriptivos")
+```
+
+
+```{r}
+# nuevas variables
+df$TJ_POB <- (df$TJ/df$POB)
+df$PEA_POB <- (df$PEA/df$POB)
+df$MIG_POB <- (df$MIG/df$POB)
+```
+
+```{r}
+summary(df[,-c(1,2)])
+```
+
+## 3.  Normalizacion con logaritmo
+
+* valores con varianzas muy grandes
+* aplico normalizacion logaritmica en algunas variables
+
+```{r}
+df_standar <- df %>% 
+  mutate(across(c("TG", "PIBc", "POB", "PEA", "TJ", "TJ_POB", "PEA_POB"), ~log(.)))%>%
+  mutate(year = year(df$year))
+
+summary(df_standar)
+```
+
+
+## 0. Preparando los datos
+
+* Tenemos datos panel con la siguente forma 90 paises 5 anios y estas columnas
+* Nuestro panel es balanceado y corto
+
+```{r}
+dim(table(df_standar$pais,df_standar$year))
+
+colnames(df_standar)
+```
+
+* definimos las variables para el modelo
+```{r, warning=FALSE}
+attach(df_standar)
+Y <- cbind(TG)
+X <- cbind(PIBc, INT, DEmp, INF, TJ_POB, PEA_POB, MIG_POB)
+
+df_panel <- pdata.frame(df_standar,
+                        index=c('pais','year'))
+
+# para las validaciones
+#######
+datos_2 = data.frame(Y, X, pais)
+write.table(datos_2, "02_datos.txt", sep=";", row.names=F)	
+#######
+
+head(df_panel,3)
+```
+
+## 1. Efectos Fijos
+```{r}
+fijos <- plm(Y ~ X, data=df_panel, index=c('pais','year'), model= "within")
+# summary(fijos)
+```
+
+## 2. Efectos aleatorios
+```{r}
+random <- plm(Y ~ X, data=df_panel, index=c('pais','year'), model= "random")
+# summary(random)
+```
+## 3. MCO
+
+```{r}
+mco_pool = plm(Y ~ X, data=df_panel,index=c("state", "year"), model="pooling")
+mco = lm(Y ~ X, data=df_panel)
+# summary(mco)
+```
+
+# Test para escoger el mejor modelo
+
+## 1. F test
+*  H0: modelo (MCO) vs H1: efectos fijos
+* p<0.05 entonces rechazo Ho, el mejor modelo seria efectos fijos
+```{r}
+pFtest(fijos, mco) 
+```
+
+## 2. Breusch-Pagan
+* H0: modelo agrupado (MCO) vs H1: efectos aleatorios
+* p<0.05 entonces rechazo la Ho, por ahora el mejor modelo seria aleatorios
+```{r}
+plmtest(mco_pool, type=c("bp"))
+```
+
+## 3. Hausman test 
+* H0: efectos aleatorios vs H1: efectos fijos
+* p<0.05 entonces rechazo Ho y decido que efectos fijos es mejor
+```{r}
+phtest(fijos, random)
+```
+
+# Regresiones
+## Regresieon con efectos fijos
+
+### by pais Spain
+
+```{r}
+df_panel$pais <- relevel(df_panel$pais, ref = "Spain")
+regresion_pais_sp = lm(Y ~ X + factor(pais), data = df_panel)
+
+# summary(regresion_pais)
+
+
+p_values <- summary(regresion_pais_sp)$coefficients[,4]
+coeficiente <- summary(regresion_pais_sp)$coefficients[,1]
+
+no_significativo <- names(p_values)[which(p_values > 0.05)]
+
+significativo_positivos <- names(p_values)[which(p_values < 0.05 & coeficiente>0)]
+
+significativo_negativos <- names(p_values)[which(p_values < 0.05 & coeficiente<0)]
+```
+
+
+```{r}
+summary(regresion_pais_sp)
+```
+
+```{r}
+
+tabla_resumen <- as.data.frame(coef(summary(regresion_pais_sp)))
+
+print(tabla_resumen)
+
+# library(writexl)
+# 
+# Escribe tu marco de datos a un archivo Excel
+# write_xlsx(tabla_resumen, "resultado_mef.xlsx", as)
+```
+
+
+### Analizando significancias
+```{r}
+no_significativo
+# as.data.frame(coef(no_significativo))
+```
+
+```{r}
+significativo_positivos
+```
+
+```{r}
+significativo_negativos
+```
+
+# EDA complementario
+```{r}
+# Asumiendo que df_panel tiene una columna TJ
+
+#
+df_panel_sum <- df_panel %>%
+  group_by(year) %>%
+  summarise(TG_sum = sum(TG, na.rm = TRUE), TJ_sum = sum(TJ, na.rm = TRUE))
+
+df_panel_sum$year <- as.numeric(as.character(df_panel_sum$year))
+
+df_panel_sum$TJ_norm <- df_panel_sum$TJ_sum / max(df_panel_sum$TJ_sum) * max(df_panel_sum$TG_sum)
+
+ggplot(df_panel_sum, aes(x = year)) +
+  geom_line(aes(y = TG_sum, color = "Total ganancias")) +
+  geom_point(aes(y = TG_sum, color = "Total ganancias")) +
+  geom_line(aes(y = TJ_norm, color = "Total jugadores")) +
+  geom_point(aes(y = TJ_norm, color = "Total jugadores")) +
+  scale_y_continuous(sec.axis = sec_axis(~ . / max(df_panel_sum$TG_sum) * max(df_panel_sum$TJ_sum),
+                                         name = " Log() Total Jugadores")) +
+  labs(x = "Year", y = "Log() Total Ganancias") +
+  scale_color_manual(name = "Leyenda",
+                     values = c("Total ganancias" = "blue", "Total jugadores" = "red")) +
+  theme_classic()+
+  theme(legend.position = 'bottom', legend.direction = "horizontal")
+```
+
+```{r}
+# Asumiendo que df_panel tiene una columna TJ
+# df_sum <- df %>%
+#   group_by(year) %>%
+#   summarise(TG_sum = sum(TG, na.rm = TRUE), TJ_sum = sum(TJ, na.rm = TRUE))
+# 
+# # df_sum$year <- as.numeric(as.character(df_sum$year))
+# 
+# # Normalizar los datos de TJ para que estén en la misma escala que TG_sum
+# df_sum$TJ_norm <- df_sum$TJ_sum / max(df_sum$TJ_sum) * max(df_sum$TG_sum)
+# 
+# ggplot(df_sum, aes(x = year, y = TG_sum, group = 1)) +
+#   geom_line(aes(y = TG_sum), color = "blue") +
+#   geom_line(aes(y = TJ_norm), color = "red") +
+#   scale_y_continuous(sec.axis = sec_axis(~ . / max(df_sum$TG_sum) * max(df_sum$TJ_sum), 
+#                                          name = "Total Jugadores (TJ)")) +
+#   labs(x = "Year", y = "Total Ganacias (TG)") +
+#   theme(legend.position = "top") +
+#   ggtitle("Ingresos Totales por Año") +
+#   theme_economist() +
+#   scale_color_economist()
+```
+
+```{r}
+# ggplot(df_panel %>%
+#   group_by(year) %>%
+#   filter(pais %in% c("Spain", "Pakistan", "India", "China")),
+#   aes(x = year, y = INT, group = pais, color=pais)) +
+#   geom_line() +
+#   labs(x = "Year", y = "Life total_earnings") +
+#   ggtitle("Paises con mayor CAGR") +
+#   theme_classic()
+```
+
+## SUpuestos
+### Normalidad
+```{r}
+regresion_pais = lm(TG ~ PIBc + INT + DEmp + INF + TJ_POB + PEA_POB + MIG_POB, factor(pais))
+e = regresion_pais$residuals
+ks.test(e, pnorm, 0, sd(e)) # no se rechaza H0
+shapiro.test(e) # se rechaza H0
+lillie.test(e) # se rechaza H0
+```
+```{r}
+summary(regresion_pais)
+```
+
+
+```{r}
+# homosedaticidad, rechazo
+bptest(regresion_pais)
+```
+
+```{r}
+# H0: autocorrelación (como los efectos fijos son por individuos, debemos preocuparnos por la heterocedasticidad)
+    
+dwtest(regresion_pais) # se rechaza H0
+  
+```
+
+```{r}
+X = datos[,-c(1,9)]
+cte = rep(1, length(TG))
+X = cbind(cte, X)
+RdetR(X) 
+CVs(X)
+CVs(X) < 0.1 # para TRUE posible problema de multicolinealidad no esencial
+VIF(X)
+VIF(X) > 10 # para TRUE posible problema de multicolinealidad esencial
+```
+
