@@ -51,25 +51,27 @@ colnames(df) <- renombrar
 
 ```
 
-## Revision de nulos
+## 2. Revision de total de datos
+
+* Revision de nulos
 ```{r}
 sapply(df, function(x) sum(is.na(x)))
 ```
-
-## Revision de total de datos
+* Tenemos datos panel con la siguente forma 90 paises 5 anios y estas columnas
+* Nuestro panel es balanceado y corto
 ```{r}
 df %>% 
   group_by(year) %>% 
   summarise(count = n())
 ```
 
-## Descriptivo
+## 3. Descriptivo
 ```{r}
 # sumtable(df[,-c(1,2)], digits = 3,
 #          title="Estadisticos descriptivos")
 ```
 
-
+* Creacion de nuevas variables
 ```{r}
 # nuevas variables
 df$TJ_POB <- (df$TJ/df$POB)
@@ -77,14 +79,11 @@ df$PEA_POB <- (df$PEA/df$POB)
 df$MIG_POB <- (df$MIG/df$POB)
 ```
 
-```{r}
-summary(df[,-c(1,2)])
-```
 
-## 3.  Normalizacion con logaritmo
+## 4. Normalizacion con logaritmo
 
-* valores con varianzas muy grandes
-* aplico normalizacion logaritmica en algunas variables
+* Valores con varianzas muy grandes
+* Aplico normalizacion logaritmica en algunas variables
 
 ```{r}
 df_standar <- df %>% 
@@ -95,18 +94,11 @@ summary(df_standar)
 ```
 
 
-## 0. Preparando los datos
+# Creacion de moledo
 
-* Tenemos datos panel con la siguente forma 90 paises 5 anios y estas columnas
-* Nuestro panel es balanceado y corto
+## Datos en formato panel
 
-```{r}
-dim(table(df_standar$pais,df_standar$year))
-
-colnames(df_standar)
-```
-
-* definimos las variables para el modelo
+* Definimos las variables para el modelo
 ```{r, warning=FALSE}
 attach(df_standar)
 Y <- cbind(TG)
@@ -123,19 +115,20 @@ write.table(datos_2, "02_datos.txt", sep=";", row.names=F)
 
 head(df_panel,3)
 ```
+## Creacion de modelos
 
-## 1. Efectos Fijos
+### 1. Efectos Fijos
 ```{r}
 fijos <- plm(Y ~ X, data=df_panel, index=c('pais','year'), model= "within")
 # summary(fijos)
 ```
 
-## 2. Efectos aleatorios
+### 2. Efectos aleatorios
 ```{r}
 random <- plm(Y ~ X, data=df_panel, index=c('pais','year'), model= "random")
 # summary(random)
 ```
-## 3. MCO
+### 3. MCO
 
 ```{r}
 mco_pool = plm(Y ~ X, data=df_panel,index=c("state", "year"), model="pooling")
@@ -143,7 +136,7 @@ mco = lm(Y ~ X, data=df_panel)
 # summary(mco)
 ```
 
-# Test para escoger el mejor modelo
+# Validacion de modelo
 
 ## 1. F test
 *  H0: modelo (MCO) vs H1: efectos fijos
@@ -167,6 +160,7 @@ phtest(fijos, random)
 ```
 
 # Regresiones
+
 ## Regresieon con efectos fijos
 
 ### by pais Spain
@@ -188,25 +182,16 @@ significativo_positivos <- names(p_values)[which(p_values < 0.05 & coeficiente>0
 significativo_negativos <- names(p_values)[which(p_values < 0.05 & coeficiente<0)]
 ```
 
-
+* Modelo con variables dummy
 ```{r}
-summary(regresion_pais_sp)
-```
-
-```{r}
-
+# summary(regresion_pais_sp)
 tabla_resumen <- as.data.frame(coef(summary(regresion_pais_sp)))
 
 print(tabla_resumen)
-
-# library(writexl)
-# 
-# Escribe tu marco de datos a un archivo Excel
-# write_xlsx(tabla_resumen, "resultado_mef.xlsx", as)
 ```
 
 
-### Analizando significancias
+### Agrupacion de significancias
 ```{r}
 no_significativo
 # as.data.frame(coef(no_significativo))
@@ -247,66 +232,43 @@ ggplot(df_panel_sum, aes(x = year)) +
   theme(legend.position = 'bottom', legend.direction = "horizontal")
 ```
 
-```{r}
-# Asumiendo que df_panel tiene una columna TJ
-# df_sum <- df %>%
-#   group_by(year) %>%
-#   summarise(TG_sum = sum(TG, na.rm = TRUE), TJ_sum = sum(TJ, na.rm = TRUE))
-# 
-# # df_sum$year <- as.numeric(as.character(df_sum$year))
-# 
-# # Normalizar los datos de TJ para que estén en la misma escala que TG_sum
-# df_sum$TJ_norm <- df_sum$TJ_sum / max(df_sum$TJ_sum) * max(df_sum$TG_sum)
-# 
-# ggplot(df_sum, aes(x = year, y = TG_sum, group = 1)) +
-#   geom_line(aes(y = TG_sum), color = "blue") +
-#   geom_line(aes(y = TJ_norm), color = "red") +
-#   scale_y_continuous(sec.axis = sec_axis(~ . / max(df_sum$TG_sum) * max(df_sum$TJ_sum), 
-#                                          name = "Total Jugadores (TJ)")) +
-#   labs(x = "Year", y = "Total Ganacias (TG)") +
-#   theme(legend.position = "top") +
-#   ggtitle("Ingresos Totales por Año") +
-#   theme_economist() +
-#   scale_color_economist()
-```
-
-```{r}
-# ggplot(df_panel %>%
-#   group_by(year) %>%
-#   filter(pais %in% c("Spain", "Pakistan", "India", "China")),
-#   aes(x = year, y = INT, group = pais, color=pais)) +
-#   geom_line() +
-#   labs(x = "Year", y = "Life total_earnings") +
-#   ggtitle("Paises con mayor CAGR") +
-#   theme_classic()
-```
-
-## SUpuestos
-### Normalidad
+# Validacion de Supuestos
+## Normalidad
 ```{r}
 regresion_pais = lm(TG ~ PIBc + INT + DEmp + INF + TJ_POB + PEA_POB + MIG_POB, factor(pais))
 e = regresion_pais$residuals
-ks.test(e, pnorm, 0, sd(e)) # no se rechaza H0
-shapiro.test(e) # se rechaza H0
-lillie.test(e) # se rechaza H0
+ks.test(e, pnorm, 0, sd(e)) 
+shapiro.test(e)
+lillie.test(e) 
 ```
+## Significancia Global
 ```{r}
 summary(regresion_pais)
 ```
 
+## Homosedasticidad
 
 ```{r}
-# homosedaticidad, rechazo
+
 bptest(regresion_pais)
-```
-
-```{r}
 # H0: autocorrelación (como los efectos fijos son por individuos, debemos preocuparnos por la heterocedasticidad)
     
 dwtest(regresion_pais) # se rechaza H0
-  
+
+# Verificando que variable genera heterocedasticidad
+
+plot(e ~ PIBc, main = "Residuos vs PBIc", xlab = "PIBc", ylab = "Residuos")
+plot(e ~ INT, main = "Residuos vs INT", xlab = "PIBc", ylab = "Residuos")
+plot(e ~ DEmp, main = "Residuos vs DEmp", xlab = "PIBc", ylab = "Residuos")
+plot(e ~ INF, main = "Residuos vs INF", xlab = "PIBc", ylab = "Residuos")
+plot(e ~ TJ_POB, main = "Residuos vs TJ_POB", xlab = "PIBc", ylab = "Residuos")
+plot(e ~ PEA_POB, main = "Residuos vs PEA_POB", xlab = "PIBc", ylab = "Residuos")
+plot(e ~ MIG_POB, main = "Residuos vs MIG_POB", xlab = "PIBc", ylab = "Residuos")
+# abline(h = 0, lty = 2)
 ```
 
+
+## Multicolinealidad
 ```{r}
 X = datos[,-c(1,9)]
 cte = rep(1, length(TG))
